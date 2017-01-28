@@ -18,6 +18,7 @@ void fpgaCommand(BaseSequentialStream *chp, int argc, char *argv[])
     chprintf(chp, "    connect      Connect the FPGA to the SPINOR"SHELL_NEWLINE_STR);
     chprintf(chp, "    disconnect   Disconnect the FPGA to the SPINOR"SHELL_NEWLINE_STR);
     chprintf(chp, "    status       Show status of the FPGA"SHELL_NEWLINE_STR);
+    chprintf(chp, "    xvc          Enter XVC mode"SHELL_NEWLINE_STR);
     return;
   }
 
@@ -80,6 +81,52 @@ void fpgaCommand(BaseSequentialStream *chp, int argc, char *argv[])
   else if (!strcasecmp(argv[0], "status")) {
     chprintf(chp, "FPGA programmed: %s"SHELL_NEWLINE_STR,
                                   fpgaProgrammed()?"Yes":"No");
+  }
+
+  else if (!strcasecmp(argv[0], "xvc")) {
+    chprintf(chp, "XVC MODE ENTERED"SHELL_NEWLINE_STR);
+
+    fpgaJtagAcquire();
+
+    // this is a variant of the xvc interface; but for
+    // memory reasons, tms/tdi are interleaved on byte-level.
+
+    while (1)
+    {
+      uint8_t cmd[6];
+      uint32_t length = 0;
+      unsigned int i;
+
+      for (i = 0; i < sizeof(cmd); ++i)
+        cmd[i] = streamGet(chp);
+
+      if (memcmp(cmd, "shift:", 6))
+      {
+        chprintf(chp, "unknown command"SHELL_NEWLINE_STR);
+        break;
+      }
+
+      length  = streamGet(chp) << 0;
+      length |= streamGet(chp) << 8;
+      length |= streamGet(chp) << 16;
+      length |= streamGet(chp) << 24;
+
+      if (!length)
+        continue;
+
+      for (;;)
+      {
+        uint8_t tms = streamGet(chp);
+        uint8_t tdi = streamGet(chp);
+        uint8_t tdo = fpgaJtagShift(tms, tdi, (length > 7) ? 8 : length);
+        streamPut(chp, tdo);
+        if (length <= 8)
+          break;
+        length -= 8;
+      }
+    }
+
+    fpgaJtagRelease();
   }
 
   else {

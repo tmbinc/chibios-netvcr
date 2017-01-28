@@ -65,3 +65,52 @@ int fpgaUnreset(void)
   palSetPadMode(IOPORT3, 1, PAL_MODE_OUTPUT_PUSHPULL);
   return 0;
 }
+
+void fpgaJtagAcquire(void)
+{
+  palSetPadMode(IOPORT4, 4, PAL_MODE_OUTPUT_PUSHPULL); // MCU_F_TCK
+  palSetPadMode(IOPORT4, 5, PAL_MODE_OUTPUT_PUSHPULL); // MCU_F_TMS
+  palSetPadMode(IOPORT4, 6, PAL_MODE_OUTPUT_PUSHPULL); // MCU_F_TDI
+  palSetPadMode(IOPORT4, 7, PAL_MODE_INPUT); // MCU_F_TDO
+}
+
+void fpgaJtagRelease(void)
+{
+  palSetPadMode(IOPORT4, 4, PAL_MODE_INPUT); // MCU_F_TCK
+  palSetPadMode(IOPORT4, 5, PAL_MODE_INPUT); // MCU_F_TMS
+  palSetPadMode(IOPORT4, 6, PAL_MODE_INPUT); // MCU_F_TDI
+  palSetPadMode(IOPORT4, 7, PAL_MODE_INPUT); // MCU_F_TDO
+}
+
+uint8_t fpgaJtagShift(uint8_t tms, uint8_t tdi, int bits)
+{
+  int i;
+  uint8_t result = 0;
+  volatile int d;
+
+  // shift out up to 8 bits, LSB-first.
+  // TDO/TMS change on rising TCK
+  // TDI is sampled on rising TCK
+
+  for (i = 0; i < bits; ++i)
+  {
+    uint8_t pad_value = 0;
+
+    if (tms & (1<<i))
+      pad_value |= 1 << 5; // TMS
+    if (tdi & (1<<i))
+      pad_value |= 1 << 6; // TDI
+
+    if (palReadPort(IOPORT4) & (1<<7)) // TMS
+      result |= 1 << i;
+
+    palWritePort(IOPORT4, pad_value);            // set TMS, TDI with TCK=0
+    for (d = 0; d < 10; ++d);
+    palWritePort(IOPORT4, pad_value | (1 << 4)); // set TMS, TDI with TCK=0
+    for (d = 0; d < 10; ++d);
+    palWritePort(IOPORT4, pad_value);            // set TMS, TDI with TCK=0
+    for (d = 0; d < 10; ++d);
+  }
+
+  return result;
+}
